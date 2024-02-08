@@ -11,8 +11,7 @@ def load_model(model_path):
         return None
 
 
-def make_prediction(model, text):
-    tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
-    predictor = pipeline('text-classification', model=model, tokenizer=tokenizer)
+def make_prediction(model_path, text):
+    predictor = pipeline('text-classification', model=model_path, tokenizer=model_path)
     prediction = predictor(text)
     return prediction

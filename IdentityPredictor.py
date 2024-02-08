@@ -12,14 +12,18 @@ def main():
             dataset_path = 'data/Emergency_Expressions.xlsx'
         model = build_model(dataset_path)
     else:
-        model = load_model(model_path)
+        choice = input("Model found. Do you want to use the existing model (y) or train a new one?(n)")
+        if choice == 'n':
+            model = build_model('data/Emergency_Expressions.xlsx')
+        else:
+            model = load_model(model_path)
 
      
     while True:
             text = input("Please enter some text (or 'quit' to exit): ")
             if text.lower() == 'quit':
                 break
-            prediction = make_prediction(model, text)
+            prediction = make_prediction(model_path, text)
             print(f"The prediction for '{text}' is: {prediction}")
             # correct = input("Was this prediction correct? (yes/no): ")
             # if correct.lower() == 'no':
