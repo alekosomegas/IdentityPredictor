@@ -1,36 +1,53 @@
 import os
 from src.model import build_model
-from src.predict import load_model, make_prediction
+from src.predict import make_prediction
+from datetime import datetime
+
+MODELS_PATH = 'models'
+DEFAULT_DATASET_PATH = 'data/Emergency_Expressions.xlsx'
+
+def create_model_name():
+    new_model_path = os.path.join(MODELS_PATH, datetime.now().strftime("%Y%m%d-%H%M%S"))
+    os.makedirs(new_model_path)
+    return new_model_path
 
 def main():
-    model_path = 'models'
+    trained_model_path = None
     # check if folder is empty
-    if os.listdir(model_path).__len__() == 0:
-        print("No model found. Build and train a new model.")
+    if os.listdir(MODELS_PATH).__len__() == 0:
+        print("No models found. Build and train a new model.")
         dataset_path = input("Please enter the path to the dataset (leave empty to use default): ")
         if not dataset_path:
-            dataset_path = 'data/Emergency_Expressions.xlsx'
-        model = build_model(dataset_path)
+            dataset_path = DEFAULT_DATASET_PATH
+        
+        trained_model_path = create_model_name()
+        build_model(dataset_path, trained_model_path)
     else:
-        choice = input("Model found. Do you want to use the existing model (y) or train a new one?(n)")
-        if choice == 'n':
-            model = build_model('data/Emergency_Expressions.xlsx')
-        else:
-            model = load_model(model_path)
-
-     
-    while True:
-            text = input("Please enter some text (or 'quit' to exit): ")
-            if text.lower() == 'quit':
+        while True:
+            choice = input("Model(s) found. Do you want to use an existing model (y) or train a new one? (n)").lower()
+            if choice == 'n':
+                trained_model_path = create_model_name()
+                build_model(DEFAULT_DATASET_PATH, trained_model_path)
                 break
-            prediction = make_prediction(model_path, text)
+            elif choice == 'y':
+                while True:
+                    model_path = input("Please enter the path to the model: (YYYYMMDD-HHMMSS) ")
+                    # check if model exists
+                    if os.path.exists(os.path.join(MODELS_PATH, model_path)):
+                        print("Model found. Ready to make predictions.")
+                        trained_model_path = os.path.join(MODELS_PATH, model_path)
+                        break
+                    else:
+                        print(f"Model {'model_path'} not found. try again")
+
+    try:
+        while True:
+            text = input("Please enter some text (or 'Ctrl+C' to exit): ")
+            prediction = make_prediction(trained_model_path, text)
             print(f"The prediction for '{text}' is: {prediction}")
-            # correct = input("Was this prediction correct? (yes/no): ")
-            # if correct.lower() == 'no':
-            #     # Update model based on user feedback
-            #     model = update_model(model, text)
-            # add to cvs file and re-train model
-            
+    except KeyboardInterrupt:
+        print("Exiting...")
+    
 
 if __name__ == "__main__":
     main()

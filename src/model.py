@@ -1,12 +1,10 @@
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from transformers import AutoTokenizer, BertTokenizer,TFBertForSequenceClassification, TFAutoModelForSequenceClassification, Pipeline, pipeline
+from transformers import AutoTokenizer, TFAutoModelForSequenceClassification
 import numpy as np
 import tensorflow as tf
-import matplotlib.pyplot as plt
-import seaborn as sns
-from datasets import Dataset, DatasetDict
+from datasets import Dataset
 from keras.callbacks import EarlyStopping
+import os
 
 # check if GPU is available
 print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
@@ -24,58 +22,77 @@ def load_data(dataset_path):
         raise e
 
 
-def split_and_tokenize(df):
-    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+def split_and_tokenize(df, model_path):
+    tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
     dataset = Dataset.from_pandas(df)
     # Split the Dataset
-    dataset_dict = dataset.train_test_split(test_size=0.3, seed=42)
-    print(dataset_dict)
+    dataset_split = dataset.train_test_split(test_size=0.3, seed=42)
+    print(dataset_split)
+
     def tokenize(data):
         return tokenizer(data["text"], truncation=True, padding='longest')
     
-    dataset = dataset_dict.map(tokenize, batched=True)
-    tokenizer.save_pretrained('models')
-    return dataset['train'], dataset['test'], np.array(dataset_dict['train']['labels']), np.array(dataset_dict['test']['labels'])
+    tokenized_dataset = dataset_split.map(tokenize, batched=True)
+    try:
+        tokenizer.save_pretrained(model_path)
+    except Exception as e: 
+        print(f"Error in saving tokenizer: {e}")
+
+    return tokenized_dataset['train'], tokenized_dataset['test'], np.array(dataset_split['train']['labels']), np.array(dataset_split['test']['labels'])
 
 
 def create_model():
+    learning_rate = 3e-5
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+    loss = 'sparse_categorical_crossentropy'
+    metrics = tf.metrics.SparseCategoricalAccuracy()
+
     print('Creating model...')
+
     id2label = {0: "Individual Identity", 1: "Group Identity"}
     label2id = {"Individual Identity": 0, "Group Identity": 1}
-    model = TFBertForSequenceClassification.from_pretrained(
+    model = TFAutoModelForSequenceClassification.from_pretrained(
         "bert-base-uncased", 
         id2label=id2label, 
         label2id=label2id, 
         num_labels=2
     )
+
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=3e-5),
-        loss='sparse_categorical_crossentropy',
-        metrics=tf.metrics.SparseCategoricalAccuracy())
+        optimizer=optimizer,
+        loss=loss,
+        metrics=metrics)
     print(model.summary())
     return model
 
     
 def train(model, train_data, train_labels, test_data, test_labels):
-    print('Training the model...')
+    epochs = 40
+    batch_size = 64
 
-    # Initialize the early stopping callback
+    print('Training the model...')
     early_stopping = EarlyStopping(monitor='val_loss', patience=10)
 
-    model.fit([np.array(train_data['input_ids']), np.array(train_data['attention_mask'])], train_labels, epochs=40, batch_size=64, 
-              validation_data=([np.array(test_data['input_ids']), np.array(test_data['attention_mask'])], test_labels), callbacks=[early_stopping])
+    history = model.fit(
+        [np.array(train_data['input_ids']), np.array(train_data['attention_mask'])], train_labels, 
+        epochs=epochs, batch_size=batch_size, 
+        validation_data=([np.array(test_data['input_ids']), np.array(test_data['attention_mask'])], test_labels), 
+        callbacks=[early_stopping])
     
-    return model
+    # save the history
+    history_df = pd.DataFrame(history.history)
+    return history_df
+    
 
-
-def build_model(dataset_path):
+def build_model(dataset_path, model_path):
     df = load_data(dataset_path)
-    train_data, test_data, train_labels, test_labels = split_and_tokenize(df)
+    train_data, test_data, train_labels, test_labels = split_and_tokenize(df, model_path)
     model = create_model()
-    model = train(model, train_data, train_labels, test_data, test_labels)
+    history = train(model, train_data, train_labels, test_data, test_labels)
     try:
-        model.save_pretrained('models')
-        print('Model saved successfully.')
+        model.save_pretrained(model_path)
+        history.to_csv(os.path.join(model_path, 'history.csv'), index=False)
+        print(f'Model ({model_path}) saved successfully.')
     except Exception as e:
-        print(f"Error in saving model: {e}")
-    return model
+        print(f"Error in saving model: {e} exiting...")
+        raise e
